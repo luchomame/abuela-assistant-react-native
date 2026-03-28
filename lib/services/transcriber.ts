@@ -37,8 +37,9 @@ export class TranscriptionService {
    */
   // !NOTE: we are doing factory method here so on unmount the service unmounts as well. this can cause latency issues when coming back and trying to use the mic. can switch to singleton to prevent this but just leaving it as is for now
   static async create(modelPath: string): Promise<TranscriptionService> {
-    console.log("[Transcriber] Initializing Whisper with mode: ", modelPath);
-    const ctx = await initWhisper({ filePath: modelPath });
+    const normalizedPath = modelPath.replace(/^file:\/\//, "");
+    console.log("[Transcriber] Initializing Whisper with model path:", normalizedPath);
+    const ctx = await initWhisper({ filePath: normalizedPath });
     console.log("[Transcriber] Whisper initialized");
     return new TranscriptionService(ctx);
   }

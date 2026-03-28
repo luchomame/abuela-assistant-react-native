@@ -1,10 +1,8 @@
 import { TranscriptionService } from "@/lib/services/transcriber";
-import { Asset } from "expo-asset";
+import { getWhisperModelUri } from "@/lib/services/model-manager";
 import { useEffect, useRef, useState } from "react";
 
-const modelAsset = require("@/assets/models/ggml-tiny.en.bin");
-
-export function useWhisper() {
+export function useWhisper(enabled = true) {
   // ref so instance persists across rerenders
   const transcriber = useRef<TranscriptionService | null>(null);
   const stopRealtimeRef = useRef<(() => Promise<void>) | null>(null);
@@ -12,19 +10,17 @@ export function useWhisper() {
   const [isTranscribing, setIsTranscribing] = useState(false);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     let isMounted = true;
 
     async function loadModel() {
       try {
-        const asset = Asset.fromModule(modelAsset);
-        await asset.downloadAsync();
+        const modelUri = getWhisperModelUri();
+        const filePath = modelUri.replace("file://", "");
 
-        if (!asset.localUri) {
-          throw new Error("Failed to resolve local URI for the Whisper model.");
-        }
-
-        const filePath = asset.localUri.replace("file://", "");
-        // initialize whisper
         const service = await TranscriptionService.create(filePath);
 
         if (isMounted) {
@@ -41,9 +37,25 @@ export function useWhisper() {
     return () => {
       isMounted = false;
       // cleanup on unmount
-      if (transcriber.current) transcriber.current.release();
+      void release();
     };
-  }, []);
+  }, [enabled]);
+
+  const release = async () => {
+    if (!transcriber.current) {
+      return;
+    }
+
+    try {
+      await transcriber.current.release();
+    } catch (error) {
+      console.error("[useWhisper] Failed to release whisper model: ", error);
+    } finally {
+      transcriber.current = null;
+      setIsReady(false);
+      setIsTranscribing(false);
+    }
+  };
 
   const transcribeFile = async (uri: string): Promise<string | null> => {
     if (!transcriber.current) {
@@ -103,5 +115,6 @@ export function useWhisper() {
     transcribeFile,
     startRealtime,
     stopRealtime,
+    release,
   };
 }

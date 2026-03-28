@@ -4,6 +4,6 @@ const { getDefaultConfig } = require("expo/metro-config");
 const config = getDefaultConfig(__dirname);
 
 // Tell Metro to bundle .bin files as assets
-config.resolver.assetExts.push("bin");
+config.resolver.assetExts.push("bin", "gguf");
 
 module.exports = config;

@@ -2,12 +2,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useWhisper } from "@/hooks/use-whisper";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  AudioModule,
-  AudioQuality,
-  setAudioModeAsync,
-  useAudioRecorder,
-} from "expo-audio";
+import { AudioModule, AudioQuality, setAudioModeAsync } from "expo-audio";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,31 +13,24 @@ import {
   View,
 } from "react-native";
 
-export default function VoiceRecorder() {
-  // hold uri after recording
-  const [recordedUri, setRecordedUri] = useState<string | null>(null);
-  // holding text from whisper
+interface VoiceRecorderProps {
+  onTranscriptionComplete?: (text: string) => void;
+}
+
+export default function VoiceRecorder({
+  onTranscriptionComplete,
+}: VoiceRecorderProps) {
   const [transcribedText, setTranscribedText] = useState<string | null>(null);
-  // use-whisper realtime flag
   const [isRecording, setIsRecording] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
-  const audioRecorder = useAudioRecorder({
-    // Move away from presets which might override your 16000Hz setting
-    extension: ".wav",
-    sampleRate: 16000,
-    numberOfChannels: 1,
-    bitRate: 256000, // Standard for high-quality mono PCM
-    android: {
-      outputFormat: "mpeg4",
-      audioEncoder: "aac",
-    },
-    ios: {
-      audioQuality: AudioQuality.HIGH,
-    },
-    web: {},
-  });
 
-  const { isReady, isTranscribing, startRealtime, stopRealtime } = useWhisper();
+  const {
+    isReady,
+    isTranscribing,
+    startRealtime,
+    stopRealtime,
+    release: releaseWhisper,
+  } = useWhisper();
 
   // cleanup the recording if the component unmounts
   useEffect(() => {
@@ -69,7 +57,6 @@ export default function VoiceRecorder() {
     setupAudio();
   }, []);
 
-  // async functions to return promise
   async function startRecording(): Promise<void> {
     try {
       setIsRecording(true);
@@ -80,7 +67,7 @@ export default function VoiceRecorder() {
         setTranscribedText(text);
       });
 
-      audioRecorder.record();
+      // audioRecorder.record();
     } catch (error) {
       console.error("Failed to start recording", error);
       setIsRecording(false);
@@ -90,7 +77,15 @@ export default function VoiceRecorder() {
   async function stopRecording(): Promise<void> {
     try {
       await stopRealtime();
+      // audioRecorder.stop();
       setIsRecording(false);
+
+      await releaseWhisper();
+
+      // fire callback with final text
+      if (onTranscriptionComplete && transcribedText) {
+        onTranscriptionComplete(transcribedText);
+      }
     } catch (error) {
       console.error("Failed to stop recording", error);
     }
@@ -133,18 +128,16 @@ export default function VoiceRecorder() {
 
       <Pressable
         onPress={onMicPress}
-        disabled={!isReady || isTranscribing}
+        disabled={!isReady}
         style={({ pressed }) => [
           styles.button,
-          (pressed || !isReady || isTranscribing) && styles.buttonPressed,
+          (pressed || !isReady) && styles.buttonPressed,
         ]}
       >
         <Ionicons
           name={isRecording ? "stop-circle" : "mic-circle"}
           size={80}
-          color={
-            !isReady || isTranscribing ? "#aaa" : isRecording ? "#d00" : "#0c7"
-          }
+          color={!isReady ? "#aaa" : isRecording ? "#d00" : "#0c7"}
         />
       </Pressable>
 

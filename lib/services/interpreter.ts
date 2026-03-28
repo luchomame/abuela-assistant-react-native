@@ -12,16 +12,27 @@
  *   - embedSummary()        → Embedding: converts text to a float vector
  */
 
-import type { LlamaContext, NativeCompletionResult } from 'llama.rn';
-import { z } from 'zod';
-
-import { ActionItemSchema } from '@/lib/action_items';
-import { GatekeeperResultSchema, type GatekeeperResult } from '@/lib/graph/intents';
 import {
+  initLlama,
+  type LlamaContext,
+  type NativeCompletionResult,
+} from "llama.rn";
+import { z } from "zod";
+
+import { ActionItemSchema } from "@/lib/action_items";
+import {
+  GatekeeperResultSchema,
+  type GatekeeperResult,
+} from "@/lib/graph/intents";
+import {
+  getLlamaModelUri,
+  modelFileExists,
+} from "@/lib/services/model-manager";
+import {
+  EXTRACTION_PROMPT,
   GATEKEEPER_PROMPT,
   SYNTHESIS_PROMPT,
-  EXTRACTION_PROMPT,
-} from '@/lib/services/promptLoader';
+} from "@/lib/services/promptLoader";
 
 // ---------------------------------------------------------------------------
 // Zod schema for the full LLM extraction response (scribe mode).
@@ -59,15 +70,19 @@ function extractJson(text: string): string {
 // Helper: Pre-process gatekeeper response to uppercase action_type values
 // Mirrors Python's case_insensitive_action_types model_validator
 // ---------------------------------------------------------------------------
-function normalizeGatekeeperResponse(data: Record<string, unknown>): Record<string, unknown> {
+function normalizeGatekeeperResponse(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
   if (
     data.ACTION_ITEM_REQUEST &&
-    typeof data.ACTION_ITEM_REQUEST === 'object' &&
+    typeof data.ACTION_ITEM_REQUEST === "object" &&
     data.ACTION_ITEM_REQUEST !== null
   ) {
     const request = data.ACTION_ITEM_REQUEST as Record<string, unknown>;
-    if (typeof request.action_type === 'string') {
-      request.action_type = request.action_type.toUpperCase().replace(/ /g, '_');
+    if (typeof request.action_type === "string") {
+      request.action_type = request.action_type
+        .toUpperCase()
+        .replace(/ /g, "_");
     }
   }
   return data;
@@ -77,13 +92,17 @@ function normalizeGatekeeperResponse(data: Record<string, unknown>): Record<stri
 // Helper: Pre-process extraction response to uppercase action_type values
 // Mirrors Python's case_insensitive_action_types model_validator
 // ---------------------------------------------------------------------------
-function normalizeExtractionResponse(data: Record<string, unknown>): Record<string, unknown> {
+function normalizeExtractionResponse(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
   if (Array.isArray(data.action_items)) {
     for (const item of data.action_items) {
-      if (typeof item === 'object' && item !== null && 'action_type' in item) {
+      if (typeof item === "object" && item !== null && "action_type" in item) {
         const castItem = item as Record<string, unknown>;
-        if (typeof castItem.action_type === 'string') {
-          castItem.action_type = castItem.action_type.toUpperCase().replace(/ /g, '_');
+        if (typeof castItem.action_type === "string") {
+          castItem.action_type = castItem.action_type
+            .toUpperCase()
+            .replace(/ /g, "_");
         }
       }
     }
@@ -101,8 +120,43 @@ export class InterpretationService {
    * @param ctx - A pre-initialized LlamaContext from llama.rn's initLlama().
    *              The caller is responsible for loading the model first.
    */
-  constructor(ctx: LlamaContext) {
+  private constructor(ctx: LlamaContext) {
     this.ctx = ctx;
+  }
+
+  /**
+   * Factory method to make model
+   * @returns Interpretation Service
+   */
+  static async create(): Promise<InterpretationService> {
+    console.log("[Interpreter] Initializing LLM");
+
+    const modelUri = getLlamaModelUri();
+    const exists = await modelFileExists(modelUri);
+    if (!exists) {
+      throw new Error(
+        `LLM model not found at ${modelUri}. Install the model before starting the app.`,
+      );
+    }
+
+    const cleanPath = modelUri.replace("file://", "");
+
+    console.log(
+      "[Interpreter] Initializing LlamaContext with path:",
+      cleanPath,
+    );
+    const ctx = await initLlama({
+      model: cleanPath,
+      use_mlock: false, // force system to keep model in RAM // turning it off bc of crashing issues
+      n_ctx: 2048, // ctx window size (can adjust based on memory)
+      n_gpu_layers: 0,
+    });
+    // ADD THIS LOG:
+    console.log("[Interpreter] GPU Enabled?", ctx.gpu);
+    console.log("[Interpreter] Reason no GPU (if any):", ctx.reasonNoGPU);
+
+    console.log("[Interpreter] LlamaContext initialized successfully");
+    return new InterpretationService(ctx);
   }
 
   // ----- Gatekeeper (intent classification) -----
@@ -115,19 +169,19 @@ export class InterpretationService {
    * Zod throws a ZodError with a detailed report.
    */
   async classifyIntent(userInput: string): Promise<GatekeeperResult> {
-    console.log('[Interpreter] Classifying user intent:', userInput);
+    console.log("[Interpreter] Classifying user intent:", userInput);
 
-    const prompt = GATEKEEPER_PROMPT.replace('{user_input}', userInput);
+    const prompt = GATEKEEPER_PROMPT.replace("{user_input}", userInput);
 
     const response: NativeCompletionResult = await this.ctx.completion({
       prompt,
       n_predict: 512,
       temperature: 0.1, // Low temperature for structured output
-      stop: ['\n\n'], // Stop after the JSON block
+      stop: ["\n\n"], // Stop after the JSON block
     });
 
     const rawText = response.text;
-    console.log('[Interpreter] Gatekeeper raw response:', rawText);
+    console.log("[Interpreter] Gatekeeper raw response:", rawText);
 
     // Parse and validate the JSON response
     const jsonString = extractJson(rawText);
@@ -135,7 +189,7 @@ export class InterpretationService {
     const normalized = normalizeGatekeeperResponse(parsed);
     const result = GatekeeperResultSchema.parse(normalized);
 
-    console.log('[Interpreter] Gatekeeper intents parsed:', result);
+    console.log("[Interpreter] Gatekeeper intents parsed:", result);
     return result;
   }
 
@@ -149,11 +203,12 @@ export class InterpretationService {
     conversationHistory: string,
     databaseContext: string,
   ): Promise<string> {
-    console.log('[Interpreter] Generating synthesis response');
+    console.log("[Interpreter] Generating synthesis response");
 
-    const prompt = SYNTHESIS_PROMPT
-      .replace('{conversation_history}', conversationHistory)
-      .replace('{database_context}', databaseContext);
+    const prompt = SYNTHESIS_PROMPT.replace(
+      "{conversation_history}",
+      conversationHistory,
+    ).replace("{database_context}", databaseContext);
 
     const response: NativeCompletionResult = await this.ctx.completion({
       prompt,
@@ -161,8 +216,8 @@ export class InterpretationService {
       temperature: 0.7, // More creative for natural language
     });
 
-    const result = response.text || 'Lo siento, no pude generar una respuesta.';
-    console.log('[Interpreter] Synthesis response:', result.substring(0, 100));
+    const result = response.text || "Lo siento, no pude generar una respuesta.";
+    console.log("[Interpreter] Synthesis response:", result.substring(0, 100));
     return result;
   }
 
@@ -173,9 +228,15 @@ export class InterpretationService {
    * Returns a validated ExtractionResult with typed fields.
    */
   async extractSummary(transcribedText: string): Promise<ExtractionResult> {
-    console.log('[Interpreter] Starting summary extraction');
+    const startTime = Date.now();
+    console.log("[Interpreter] Starting summary extraction", {
+      timestamp: new Date().toISOString(),
+    });
 
-    const prompt = EXTRACTION_PROMPT.replace('{transcribed_text}', transcribedText);
+    const prompt = EXTRACTION_PROMPT.replace(
+      "{transcribed_text}",
+      transcribedText,
+    );
 
     const response: NativeCompletionResult = await this.ctx.completion({
       prompt,
@@ -184,12 +245,22 @@ export class InterpretationService {
     });
 
     const rawText = response.text;
-    console.log('[Interpreter] Raw extraction response:', rawText.substring(0, 200));
+    console.log(
+      "[Interpreter] Raw extraction response:",
+      rawText.substring(0, 200),
+    );
 
     const jsonString = extractJson(rawText);
     const parsed = JSON.parse(jsonString) as Record<string, unknown>;
     const normalized = normalizeExtractionResponse(parsed);
-    return ExtractionResultSchema.parse(normalized);
+    const result = ExtractionResultSchema.parse(normalized);
+
+    console.log(
+      "[Interpreter] Summary extraction finished in",
+      Date.now() - startTime,
+      "ms",
+    );
+    return result;
   }
 
   // ----- Embeddings -----
@@ -203,8 +274,18 @@ export class InterpretationService {
    * and the embedding GGUF file.
    */
   async embedSummary(summaryText: string): Promise<number[]> {
-    console.log('[Interpreter] Generating embedding vector');
+    console.log("[Interpreter] Generating embedding vector");
     const result = await this.ctx.embedding(summaryText);
     return result.embedding;
+  }
+
+  /**
+   * Optional: cleanup method to free up memory
+   */
+  async release(): Promise<void> {
+    if (this.ctx) {
+      await this.ctx.release();
+      console.log("[Interpreter] LlamaContext released");
+    }
   }
 }
