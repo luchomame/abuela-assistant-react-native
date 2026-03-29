@@ -1,4 +1,10 @@
-﻿import { useState } from "react";
+﻿import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import VoiceRecorder from "@/components/voice-recorder";
+import { useInterpreter } from "@/hooks/use-interpreter";
+import { useModelManager } from "@/hooks/use-model-manager";
+import { ExtractionResult } from "@/lib/services/interpreter";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -7,12 +13,6 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
-import VoiceRecorder from "@/components/voice-recorder";
-import { useInterpreter } from "@/hooks/use-interpreter";
-import { useModelManager } from "@/hooks/use-model-manager";
-import { ExtractionResult } from "@/lib/services/interpreter";
 
 export default function TabOneScreen() {
   const {
@@ -28,6 +28,7 @@ export default function TabOneScreen() {
   } = useModelManager();
 
   const { interpreter } = useInterpreter(areModelsReady);
+  // const { interpreter } = useInterpreter(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [summaryData, setSummaryData] = useState<ExtractionResult | null>(null);
 
@@ -63,8 +64,8 @@ export default function TabOneScreen() {
             Unable to verify models
           </ThemedText>
           <ThemedText style={styles.paragraph}>
-            The app could not confirm whether the local model files are available.
-            Please check your device storage and try again.
+            The app could not confirm whether the local model files are
+            available. Please check your device storage and try again.
           </ThemedText>
           {error ? (
             <ThemedText style={[styles.paragraph, styles.errorText]}>
@@ -96,9 +97,9 @@ export default function TabOneScreen() {
             Models Required
           </ThemedText>
           <ThemedText style={styles.paragraph}>
-            To use this app, you need two local models: Whisper for speech
-            transcription and Qwen for the local LLM. Download the missing
-            files below and reopen the app once they are installed.
+            To use this app, you need three local models: Whisper for speech
+            transcription, VAD for Whisper, and Qwen for the local LLM. Download
+            the missing files below and reopen the app once they are installed.
           </ThemedText>
 
           {missingModels.map((model) => (
@@ -140,9 +141,8 @@ export default function TabOneScreen() {
 
           {isDownloading && downloadingModel ? (
             <ThemedText style={styles.paragraph}>
-              Downloading {downloadingModel.displayName}: {Math.round(
-                downloadProgress * 100,
-              )}%
+              Downloading {downloadingModel.displayName}:{" "}
+              {Math.round(downloadProgress * 100)}%
             </ThemedText>
           ) : null}
 

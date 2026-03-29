@@ -1,6 +1,6 @@
 import { Directory, File, Paths } from "expo-file-system";
 
-export type ModelType = "whisper" | "llama";
+export type ModelType = "whisper" | "llama" | "vad";
 
 export interface ModelInfo {
   type: ModelType;
@@ -37,9 +37,18 @@ export const LLAMA_MODEL_INFO: ModelInfo = {
     "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf?download=true",
 };
 
+export const VAD_MODEL_INFO: ModelInfo = {
+  type: "vad",
+  filename: "ggml-silero-v6.2.0.bin",
+  displayName: "Whisper VAD model",
+  downloadUrl:
+    "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin?download=true",
+};
+
 export const MODEL_INFOS: readonly ModelInfo[] = [
   WHISPER_MODEL_INFO,
   LLAMA_MODEL_INFO,
+  VAD_MODEL_INFO,
 ];
 
 export function getModelFileUri(model: ModelInfo): string {
@@ -50,6 +59,10 @@ export function getWhisperModelUri(): string {
   return getModelFileUri(WHISPER_MODEL_INFO);
 }
 
+export function getVadModelUri(): string {
+  return getModelFileUri(VAD_MODEL_INFO);
+}
+
 export function getLlamaModelUri(): string {
   return getModelFileUri(LLAMA_MODEL_INFO);
 }
@@ -57,6 +70,7 @@ export function getLlamaModelUri(): string {
 export interface ModelAvailability {
   whisper: boolean;
   llama: boolean;
+  vad: boolean;
 }
 
 export async function ensureModelDirectoryExists(): Promise<void> {
@@ -76,14 +90,16 @@ export async function modelFileExists(modelUri: string): Promise<boolean> {
 }
 
 export async function checkModelsAvailable(): Promise<ModelAvailability> {
-  const [whisperExists, llamaExists] = await Promise.all([
+  const [whisperExists, llamaExists, vadExists] = await Promise.all([
     modelFileExists(getWhisperModelUri()),
     modelFileExists(getLlamaModelUri()),
+    modelFileExists(getVadModelUri()),
   ]);
 
   return {
     whisper: whisperExists,
     llama: llamaExists,
+    vad: vadExists,
   };
 }
 

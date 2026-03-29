@@ -12,22 +12,30 @@ import type {
   TranscribeRealtimeOptions,
   TranscribeResult,
   WhisperContext,
+  WhisperVadContext,
 } from "whisper.rn/index.js";
-import { initWhisper } from "whisper.rn/index.js";
+import { initWhisper, initWhisperVad } from "whisper.rn/index.js";
+import { RealtimeTranscriber } from "whisper.rn/realtime-transcription/RealtimeTranscriber.js";
+import { AudioPcmStreamAdapter } from "whisper.rn/realtime-transcription/adapters/AudioPcmStreamAdapter.js";
 
 // ---------------------------------------------------------------------------
 // TranscriptionService
 // ---------------------------------------------------------------------------
 export class TranscriptionService {
   private ctx: WhisperContext;
+  private vadCtx: WhisperVadContext;
+
+  // allows us to cleanly start and stop it without passing reference to the UI components
+  private transcriberInstance: RealtimeTranscriber | null = null;
 
   /**
    * Private Constructor to prevent initialization
    * @param ctx WhisperContext from init class
    * @returns none
    */
-  private constructor(ctx: WhisperContext) {
+  private constructor(ctx: WhisperContext, vadCtx: WhisperVadContext) {
     this.ctx = ctx;
+    this.vadCtx = vadCtx;
   }
 
   /**
@@ -36,12 +44,32 @@ export class TranscriptionService {
    * @returns Transcription service
    */
   // !NOTE: we are doing factory method here so on unmount the service unmounts as well. this can cause latency issues when coming back and trying to use the mic. can switch to singleton to prevent this but just leaving it as is for now
-  static async create(modelPath: string): Promise<TranscriptionService> {
+  static async create(
+    modelPath: string,
+    vadModelPath: string,
+  ): Promise<TranscriptionService> {
     const normalizedPath = modelPath.replace(/^file:\/\//, "");
-    console.log("[Transcriber] Initializing Whisper with model path:", normalizedPath);
-    const ctx = await initWhisper({ filePath: normalizedPath });
+    const normalizedVadPath = vadModelPath.replace(/^file:\/\//, "");
+
+    console.log(
+      "[Transcriber] Initializing Whisper with model path:",
+      normalizedPath,
+    );
+    const ctx = await initWhisper({ filePath: normalizedPath, useGpu: false });
+
+    const vadCtx: WhisperVadContext = await initWhisperVad({
+      filePath: normalizedVadPath,
+    });
     console.log("[Transcriber] Whisper initialized");
-    return new TranscriptionService(ctx);
+    console.log("[Transcriber] CTX GPU Enabled?", ctx.gpu);
+    console.log("[Transcriber] CTX Reason no GPU (if any):", ctx.reasonNoGPU);
+    console.log("[Transcriber] VAD GPU Enabled?", vadCtx.gpu);
+    console.log(
+      "[Transcriber] VAD Reason no GPU (if any):",
+      vadCtx.reasonNoGPU,
+    );
+
+    return new TranscriptionService(ctx, vadCtx);
   }
 
   /**
@@ -84,6 +112,7 @@ export class TranscriptionService {
    *   - subscribe() → listen for incremental transcription events
    *
    * @param options - Optional real-time transcription options
+   * @deprecated
    */
   async transcribeRealtime(options?: TranscribeRealtimeOptions): Promise<{
     stop: () => Promise<void>;
@@ -93,10 +122,9 @@ export class TranscriptionService {
 
     const { stop, subscribe } = await this.ctx.transcribeRealtime({
       language: "en",
-      // Process audio in 30-second chunks (whisper.cpp hard constraint)
-      realtimeAudioSec: 10,
+      realtimeAudioSec: 30,
       // Use VAD to only transcribe when speech is detected
-      useVad: false,
+      useVad: true,
       ...options,
     });
 
@@ -104,12 +132,80 @@ export class TranscriptionService {
   }
 
   /**
-   * Optional: cleanup method to free up memory
+   * use init real time transcriber to shift the live audio stream management into javascript
    */
+  async startRealtime(
+    onTranscribe: (text: string) => void,
+    options?: TranscribeRealtimeOptions,
+  ): Promise<void> {
+    console.log("[Transcriber] Initializing safe RealtimeTranscriber API...");
+
+    if (this.transcriberInstance) {
+      console.warn("[Transcriber] Realtime transcription is already running!");
+      return;
+    }
+
+    const audioStream = new AudioPcmStreamAdapter();
+
+    this.transcriberInstance = new RealtimeTranscriber(
+      {
+        whisperContext: this.ctx,
+        audioStream: audioStream,
+        vadContext: this.vadCtx,
+      },
+      {
+        audioSliceSec: 30,
+        transcribeOptions: {
+          language: "en",
+          ...options,
+        },
+      },
+      {
+        onTranscribe: (event: any) => {
+          // standardize text extraction
+          const text = event?.data?.result || event?.result;
+          if (text && text.trim().length > 0) {
+            onTranscribe(text.trim());
+            console.log("[Transcriber] Chunk transcribed:", text.trim());
+          }
+        },
+        onError: (error: any) => {
+          console.error("[Transcriber] RealtimeTranscriber error:", error);
+        },
+      },
+    );
+
+    await this.transcriberInstance.start();
+    console.log("[Transcriber] Realtime transcription started");
+  }
+
+  /**
+   * clean method to stop realtime transcriber
+   */
+  async stopRealtime(): Promise<void> {
+    if (this.transcriberInstance) {
+      console.log("[Transcriber] Stopping RealtimeTranscriber...");
+      await this.transcriberInstance.stop();
+      this.transcriberInstance = null;
+      console.log("[Transcriber] RealtimeTranscriber stopped.");
+    }
+  }
+
   async release(): Promise<void> {
+    await this.stopRealtime();
+
+    // adding some secs to let whisper process last few secs of audio
+    console.log("[Transcriber] Flushing in progress queue...");
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
     if (this.ctx) {
       await this.ctx.release();
-      console.log("[Transcriber] whisper released");
+      console.log("[Transcriber] Whisper context safely released from memory.");
+    }
+
+    if (this.vadCtx) {
+      await this.vadCtx.release();
+      console.log("[Transcriber] VAD context released from memory.");
     }
   }
 }

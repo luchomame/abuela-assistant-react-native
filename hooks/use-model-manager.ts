@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
 import {
-  downloadModel,
-  type ModelAvailability,
-  MODEL_INFOS,
-  type ModelInfo,
   checkModelsAvailable,
+  downloadModel,
+  MODEL_INFOS,
+  type ModelAvailability,
+  type ModelInfo,
 } from "@/lib/services/model-manager";
+import { useCallback, useEffect, useState } from "react";
 
 export interface ModelManagerState {
   availability: ModelAvailability | null;
@@ -46,6 +46,7 @@ export function useModelManager() {
         availability: {
           whisper: false,
           llama: false,
+          vad: false,
         },
         isLoading: false,
         error:
@@ -101,7 +102,10 @@ export function useModelManager() {
 
   return {
     ...state,
-    isReady: !!state.availability?.llama && !!state.availability?.whisper,
+    isReady:
+      !!state.availability?.llama &&
+      !!state.availability?.whisper &&
+      !!state.availability?.vad,
     missingModels: MODEL_INFOS.filter((model) =>
       state.availability ? !state.availability[model.type] : true,
     ),

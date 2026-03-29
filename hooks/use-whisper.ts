@@ -1,11 +1,14 @@
+import {
+  getVadModelUri,
+  getWhisperModelUri,
+} from "@/lib/services/model-manager";
 import { TranscriptionService } from "@/lib/services/transcriber";
-import { getWhisperModelUri } from "@/lib/services/model-manager";
 import { useEffect, useRef, useState } from "react";
 
 export function useWhisper(enabled = true) {
   // ref so instance persists across rerenders
   const transcriber = useRef<TranscriptionService | null>(null);
-  const stopRealtimeRef = useRef<(() => Promise<void>) | null>(null);
+
   const [isReady, setIsReady] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
@@ -21,7 +24,13 @@ export function useWhisper(enabled = true) {
         const modelUri = getWhisperModelUri();
         const filePath = modelUri.replace("file://", "");
 
-        const service = await TranscriptionService.create(filePath);
+        const vadModelUri = getVadModelUri();
+        const vadFilePath = vadModelUri.replace("file://", "");
+
+        const service = await TranscriptionService.create(
+          filePath,
+          vadFilePath,
+        );
 
         if (isMounted) {
           transcriber.current = service;
@@ -82,16 +91,8 @@ export function useWhisper(enabled = true) {
 
     setIsTranscribing(true);
     try {
-      const { stop, subscribe } =
-        await transcriber.current.transcribeRealtime();
-      stopRealtimeRef.current = stop;
-
-      subscribe((event: any) => {
-        const text = event?.data?.result || event?.result;
-        if (text) {
-          onTranscribe(text);
-        }
-      });
+      console.log("[useWhisper] Booting realtime API...");
+      await transcriber.current.startRealtime(onTranscribe);
     } catch (error) {
       console.error(
         "[useWhisper] Failed to start realtime transcription: ",
@@ -102,11 +103,18 @@ export function useWhisper(enabled = true) {
   };
 
   const stopRealtime = async () => {
-    if (stopRealtimeRef.current) {
-      await stopRealtimeRef.current();
-      stopRealtimeRef.current = null;
+    if (!transcriber.current) return;
+
+    try {
+      await transcriber.current.stopRealtime();
+    } catch (error) {
+      console.error(
+        "[useWhisper] Error while stopping realtime transcription: ",
+        error,
+      );
+    } finally {
+      setIsTranscribing(false);
     }
-    setIsTranscribing(false);
   };
 
   return {
