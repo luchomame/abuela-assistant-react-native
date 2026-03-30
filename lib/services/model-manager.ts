@@ -23,18 +23,20 @@ console.log("[ModelManager] MODEL_DIRECTORY_URI", MODEL_DIRECTORY_URI);
 
 export const WHISPER_MODEL_INFO: ModelInfo = {
   type: "whisper",
-  filename: "ggml-tiny.en.bin",
+  // filename: "ggml-tiny.en.bin",
+  filename: "ggml-base-q5_1.bin",
   displayName: "Whisper speech model",
   downloadUrl:
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin?download=true",
+    // "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin?download=true",
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin?download=true",
 };
 
 export const LLAMA_MODEL_INFO: ModelInfo = {
   type: "llama",
-  filename: "Qwen3-0.6B-Q4_K_M.gguf",
+  filename: "Qwen3-0.6B-Q4_0.gguf",
   displayName: "Qwen LLM model",
   downloadUrl:
-    "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf?download=true",
+    "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_0.gguf?download=true",
 };
 
 export const VAD_MODEL_INFO: ModelInfo = {

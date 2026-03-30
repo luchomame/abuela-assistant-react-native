@@ -24,6 +24,7 @@ import { AudioPcmStreamAdapter } from "whisper.rn/realtime-transcription/adapter
 export class TranscriptionService {
   private ctx: WhisperContext;
   private vadCtx: WhisperVadContext;
+  private startTime: number = 0;
 
   // allows us to cleanly start and stop it without passing reference to the UI components
   private transcriberInstance: RealtimeTranscriber | null = null;
@@ -174,6 +175,10 @@ export class TranscriptionService {
         },
       },
     );
+    this.startTime = Date.now();
+    console.log("[useWhisper] Starting realtime transcription", {
+      timestamp: new Date().toISOString(),
+    });
 
     await this.transcriberInstance.start();
     console.log("[Transcriber] Realtime transcription started");
@@ -186,8 +191,11 @@ export class TranscriptionService {
     if (this.transcriberInstance) {
       console.log("[Transcriber] Stopping RealtimeTranscriber...");
       await this.transcriberInstance.stop();
+      console.log("[Transcriber] RealtimeTranscriber stopped in", {
+        duration: (Date.now() - this.startTime) / 1000,
+      });
       this.transcriberInstance = null;
-      console.log("[Transcriber] RealtimeTranscriber stopped.");
+      // console.log("[Transcriber] RealtimeTranscriber stopped.");
     }
   }
 

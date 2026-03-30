@@ -148,7 +148,7 @@ export class InterpretationService {
     const ctx = await initLlama({
       model: cleanPath,
       use_mlock: false, // force system to keep model in RAM // turning it off bc of crashing issues
-      n_ctx: 2048, // ctx window size (can adjust based on memory)
+      n_ctx: 4096, // ctx window size (can adjust based on memory)
       n_gpu_layers: 0,
     });
     // ADD THIS LOG:
@@ -175,9 +175,9 @@ export class InterpretationService {
 
     const response: NativeCompletionResult = await this.ctx.completion({
       prompt,
-      n_predict: 512,
+      n_predict: 100,
       temperature: 0.1, // Low temperature for structured output
-      stop: ["\n\n"], // Stop after the JSON block
+      stop: ["```", "\n\n"], // Stop after the JSON block
     });
 
     const rawText = response.text;
@@ -211,13 +211,23 @@ export class InterpretationService {
     ).replace("{database_context}", databaseContext);
 
     const response: NativeCompletionResult = await this.ctx.completion({
-      prompt,
-      n_predict: 512,
+      messages: [
+        {
+          role: "system",
+          content:
+            "A previous step has summarized what the user said and this is the conversation history. Your job is to take this history and present it to the user in a friendly way. If there is anything ambiguous I want you to ask follow up questions.",
+        },
+        {
+          role: "user",
+          content: conversationHistory,
+        },
+      ],
+      n_predict: 100,
       temperature: 0.7, // More creative for natural language
     });
 
     const result = response.text || "Lo siento, no pude generar una respuesta.";
-    console.log("[Interpreter] Synthesis response:", result.substring(0, 100));
+    console.log("[Interpreter] Synthesis response:", result);
     return result;
   }
 
@@ -237,30 +247,55 @@ export class InterpretationService {
       "{transcribed_text}",
       transcribedText,
     );
-
+    const stopWords = [
+      "</s>",
+      "<|end|>",
+      "<|eot_id|>",
+      "<|end_of_text|>",
+      "<|im_end|>",
+      "<|EOT|>",
+      "<|END_OF_TURN_TOKEN|>",
+      "<|end_of_turn|>",
+      "<|endoftext|>",
+    ];
     const response: NativeCompletionResult = await this.ctx.completion({
-      prompt,
-      n_predict: 1024, // Extraction can be longer
-      temperature: 0.2, // Low temperature for structured output
+      messages: [
+        {
+          role: "system",
+          content:
+            "this is a transcription of what the user said. he wants you to summarize the transcription. /no_think",
+        },
+        {
+          role: "user",
+          content: transcribedText,
+        },
+      ],
+      n_predict: 2048,
+      temperature: 0.2,
+      stop: stopWords,
     });
 
     const rawText = response.text;
-    console.log(
-      "[Interpreter] Raw extraction response:",
-      rawText.substring(0, 200),
-    );
-
-    const jsonString = extractJson(rawText);
-    const parsed = JSON.parse(jsonString) as Record<string, unknown>;
-    const normalized = normalizeExtractionResponse(parsed);
-    const result = ExtractionResultSchema.parse(normalized);
+    console.log("[Interpreter] Raw extraction response:", rawText);
+    // skipping json string response
+    // const jsonString = extractJson(rawText);
+    // const parsed = JSON.parse(jsonString) as Record<string, unknown>;
+    // const normalized = normalizeExtractionResponse(parsed);
+    // const result = ExtractionResultSchema.parse(normalized);
 
     console.log(
       "[Interpreter] Summary extraction finished in",
       Date.now() - startTime,
       "ms",
     );
-    return result;
+    // return result;
+    const res = {
+      english_summary: rawText,
+      spanish_summary: rawText,
+      action_items: [],
+    };
+
+    return res;
   }
 
   // ----- Embeddings -----

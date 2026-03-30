@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
 import { InterpretationService } from "@/lib/services/interpreter";
+import { useEffect, useRef, useState } from "react";
 
 export function useInterpreter(enabled = true) {
   const interpreterRef = useRef<InterpretationService | null>(null);
