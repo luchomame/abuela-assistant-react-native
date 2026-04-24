@@ -121,14 +121,15 @@ export class DatabaseManager {
     summary: VisitSummary,
     actionItems: ActionItem[],
     translation: Translation,
-  ): Promise<void> {
+  ): Promise<number> {
+    let summaryId = -1;
     await this.db.withTransactionAsync(async () => {
       // 1. Insert the summary text
       const summaryResult = await this.db.runAsync(
         'INSERT INTO summaries (english_transcript) VALUES (?)',
         summary.english_transcript,
       );
-      const summaryId = summaryResult.lastInsertRowId;
+      summaryId = summaryResult.lastInsertRowId;
 
       // 2. Insert the embedding vector into the vec0 virtual table
       if (summary.summary_vector && summary.summary_vector.length === 1024) {
@@ -166,6 +167,7 @@ export class DatabaseManager {
 
       console.log('[DatabaseManager] Visit inserted, summary_id:', summaryId);
     });
+    return summaryId;
   }
 
   // ==================== SYMPTOM OPERATIONS ====================

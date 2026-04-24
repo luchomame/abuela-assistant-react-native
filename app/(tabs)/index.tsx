@@ -1,10 +1,11 @@
-﻿import { ThemedText } from "@/components/themed-text";
+import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import VoiceRecorder from "@/components/voice-recorder";
 import { useInterpreter } from "@/hooks/use-interpreter";
 import { useModelManager } from "@/hooks/use-model-manager";
-import { ExtractionResult } from "@/lib/services/interpreter";
-import { useState } from "react";
+import { getDbManager } from "@/lib/db";
+import { DatabaseManager } from "@/lib/database/manager";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -15,39 +16,62 @@ import {
 } from "react-native";
 
 export default function TabOneScreen() {
+  // Model manager handles downloading and verifying local models
   const {
     availability,
-    isLoading,
+    isLoading: isModelManagerLoading,
     isDownloading,
     downloadingModel,
     downloadProgress,
-    error,
+    error: modelManagerError,
     missingModels,
     download,
     isReady: areModelsReady,
   } = useModelManager();
 
-  const { interpreter } = useInterpreter(areModelsReady);
-  // const { interpreter } = useInterpreter(true);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [summaryData, setSummaryData] = useState<ExtractionResult | null>(null);
+  // Database manager
+  const [dbManager, setDbManager] = useState<DatabaseManager | null>(null);
+
+  // Interpreter hook encapsulates LLM logic and database saving
+  const {
+    isReady: isInterpreterReady,
+    isProcessing,
+    error: interpreterError,
+    processAndSave,
+  } = useInterpreter(dbManager, areModelsReady);
+
+  const [lastSummaryId, setLastSummaryId] = useState<number | null>(null);
+
+  // Initialize DB Manager
+  useEffect(() => {
+    let isMounted = true;
+    async function loadDb() {
+      try {
+        const manager = await getDbManager();
+        if (isMounted) {
+          setDbManager(manager);
+        }
+      } catch (e) {
+        console.error("Failed to initialize DB manager:", e);
+      }
+    }
+    loadDb();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleTranscriptionComplete = async (finalText: string) => {
-    if (!interpreter) return;
-
-    setIsProcessing(true);
-    try {
-      console.log("Passing text to LLM for extraction...");
-      const result = await interpreter.extractSummary(finalText);
-      setSummaryData(result);
-    } catch (error) {
-      console.error("LLM Extraction failed: ", error);
-    } finally {
-      setIsProcessing(false);
+    setLastSummaryId(null);
+    const summaryId = await processAndSave(finalText);
+    if (summaryId) {
+      setLastSummaryId(summaryId);
     }
   };
 
-  if (isLoading) {
+  // --- Render logic ---
+
+  if (isModelManagerLoading) {
     return (
       <ThemedView style={styles.container}>
         <ActivityIndicator size="large" color="#0c7" />
@@ -56,7 +80,8 @@ export default function TabOneScreen() {
     );
   }
 
-  if (error || availability === null) {
+  if (modelManagerError || availability === null) {
+    // ... (error handling for model manager)
     return (
       <ThemedView style={styles.container}>
         <ScrollView contentContainerStyle={styles.missingContainer}>
@@ -67,9 +92,9 @@ export default function TabOneScreen() {
             The app could not confirm whether the local model files are
             available. Please check your device storage and try again.
           </ThemedText>
-          {error ? (
+          {modelManagerError ? (
             <ThemedText style={[styles.paragraph, styles.errorText]}>
-              {error}
+              {modelManagerError}
             </ThemedText>
           ) : null}
           <Pressable
@@ -90,6 +115,7 @@ export default function TabOneScreen() {
   }
 
   if (!areModelsReady) {
+    // ... (UI for downloading missing models)
     return (
       <ThemedView style={styles.container}>
         <ScrollView contentContainerStyle={styles.missingContainer}>
@@ -146,9 +172,9 @@ export default function TabOneScreen() {
             </ThemedText>
           ) : null}
 
-          {error ? (
+          {modelManagerError ? (
             <ThemedText style={[styles.paragraph, styles.errorText]}>
-              {error}
+              {modelManagerError}
             </ThemedText>
           ) : null}
         </ScrollView>
@@ -156,11 +182,23 @@ export default function TabOneScreen() {
     );
   }
 
+  const isAppReady = isInterpreterReady && dbManager;
+
   return (
     <ThemedView style={styles.container}>
-      {!isProcessing && (
+      {!isAppReady && !isProcessing && (
+        <View style={styles.processingContainer}>
+          <ActivityIndicator size="large" color="#0c7" />
+          <ThemedText style={{ marginTop: 10 }}>
+            Initializing local AI...
+          </ThemedText>
+        </View>
+      )}
+
+      {isAppReady && !isProcessing && (
         <VoiceRecorder onTranscriptionComplete={handleTranscriptionComplete} />
       )}
+
       {isProcessing && (
         <View style={styles.processingContainer}>
           <ActivityIndicator size="large" color="#0c7" />
@@ -170,34 +208,22 @@ export default function TabOneScreen() {
         </View>
       )}
 
-      {summaryData && !isProcessing && (
-        <ScrollView style={styles.resultsContainer}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
-            Resumen de la Visita (Visit Summary)
-          </ThemedText>
-          <ThemedText style={styles.paragraph}>
-            {summaryData.spanish_summary}
-          </ThemedText>
+      <View style={styles.resultsContainer}>
+        {interpreterError && (
+          <ThemedText style={styles.errorText}>{interpreterError}</ThemedText>
+        )}
 
-          {summaryData.action_items.length > 0 && (
-            <>
-              <ThemedText type="subtitle" style={styles.sectionTitle}>
-                Action Items Found:
-              </ThemedText>
-              {summaryData.action_items.map((item, index) => (
-                <View key={index} style={styles.actionItemCard}>
-                  <ThemedText style={{ fontWeight: "bold" }}>
-                    Type: {item.action_type}
-                  </ThemedText>
-                  <ThemedText>
-                    {JSON.stringify(item.action_description, null, 2)}
-                  </ThemedText>
-                </View>
-              ))}
-            </>
-          )}
-        </ScrollView>
-      )}
+        {lastSummaryId && !isProcessing && (
+          <View>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>
+              Success!
+            </ThemedText>
+            <ThemedText style={styles.paragraph}>
+              Visit summary saved with ID: {lastSummaryId}
+            </ThemedText>
+          </View>
+        )}
+      </View>
     </ThemedView>
   );
 }
@@ -205,6 +231,8 @@ export default function TabOneScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   title: {
     marginTop: 24,
@@ -255,8 +283,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   resultsContainer: {
-    flex: 1,
     padding: 20,
+    alignSelf: "stretch",
     borderTopWidth: 1,
     borderTopColor: "rgba(150, 150, 150, 0.2)",
   },
@@ -277,5 +305,6 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#d00",
     fontWeight: "600",
+    textAlign: "center",
   },
 });
