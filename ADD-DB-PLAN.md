@@ -3,26 +3,27 @@
 ## Goal
 Enable the app to persistently save user-entered notes (Symptoms) to the local SQLite database and display them in a list that survives app reloads.
 
-## 1. Database Layer (lib/database/manager.ts) [DONE]
-- The `daily_symptoms` table is defined in the schema.
-- `insertSymptom(text)` is implemented to save new notes.
-- `getAllSymptoms()` is implemented to fetch history (newest first).
+## Phase 1: Core Infrastructure [✅ COMPLETED]
+- **Database Layer:** `daily_symptoms` table and `insertSymptom` logic implemented.
+- **Global Access:** Singleton `getDbManager()` helper restored in `lib/db.ts`.
+- **UI Integration:** "Assistant" tab built with history list and persistent saving.
+- **Verification:** User can save "My back hurts," reload, and see it still there.
 
-## 2. Global DB Access (lib/db.ts) [RESTORED]
-- Re-created the missing `lib/db.ts` file which provides a singleton `getDbManager()` helper.
-- This allows all screens to share the same database connection and initialization state.
+## Phase 2: Scribe & Search Integration [NEXT]
+The objective is to move from simple text notes to structured medical memory.
 
-## 3. UI Implementation (app/(tabs)/explore.tsx) [DONE]
-- Renamed the "Explore" tab to **"Assistant"** in `app/(tabs)/_layout.tsx`.
-- Built a scrollable list (FlatList) to display symptom history.
-- Added a `TextInput` and `Save` button at the bottom.
-- On mount, it loads previous data from the DB.
-- On "Save", it writes to the DB and refreshes the list.
+### 1. Structured Visit Storage
+- **Logic:** Update the recording flow to use `dbManager.insertVisit()`.
+- **Data:** Ensure English transcript, Spanish translation, and Action Items (meds/follow-ups) are all saved in one transaction.
 
-## 4. Verification
-- **Step 1:** Tap the "Assistant" tab (the chat bubble icon).
-- **Step 2:** Type a test note (e.g., "Sore throat") and tap **Save**.
-- **Step 3:** Confirm the note appears in the list.
-- **Step 4:** Close the app entirely.
-- **Step 5:** Re-open the app and navigate back to the "Assistant" tab.
-- **Step 6:** The note should still be there.
+### 2. Semantic Vector Wiring (The "Brain")
+- **Task:** Update the save process to call `InterpretationService.embedSummary()`.
+- **Storage:** Save the resulting 1024-dim vector into the `summaries_vec` table.
+- **Dependency:** Requires EAS Development Build for `sqlite-vec` support.
+
+### 3. Longitudinal Search Method
+- **Method:** Implement `findRelatedVisits(queryText)` in `DatabaseManager`.
+- **Flow:** Convert query to vector -> Perform cosine similarity search -> Return the most relevant past visits.
+
+### 4. Visit History UI
+- **UI:** Add a "Past Visits" section to the Assistant tab (potentially using a segmented control or toggle to switch between "Symptoms" and "Doctor Visits").
