@@ -19,6 +19,17 @@ import { RealtimeTranscriber } from "whisper.rn/realtime-transcription/RealtimeT
 import { AudioPcmStreamAdapter } from "whisper.rn/realtime-transcription/adapters/AudioPcmStreamAdapter.js";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Default language for Whisper transcription.
+ * NOTE: Using "auto" currently causes crashes in the native engine.
+ * We stick to "en" (English) for medical visit recording.
+ */
+const DEFAULT_LANGUAGE = "auto";
+
+// ---------------------------------------------------------------------------
 // TranscriptionService
 // ---------------------------------------------------------------------------
 export class TranscriptionService {
@@ -92,7 +103,7 @@ export class TranscriptionService {
     console.log("[Transcriber] Starting transcription:", audioPath);
 
     const { promise } = this.ctx.transcribe(audioPath, {
-      language: "en", // English medical speech
+      language: DEFAULT_LANGUAGE, // English medical speech
       ...options,
     });
 
@@ -122,7 +133,7 @@ export class TranscriptionService {
     console.log("[Transcriber] Starting real-time transcription");
 
     const { stop, subscribe } = await this.ctx.transcribeRealtime({
-      language: "en",
+      language: DEFAULT_LANGUAGE,
       realtimeAudioSec: 30,
       // Use VAD to only transcribe when speech is detected
       useVad: true,
@@ -157,7 +168,7 @@ export class TranscriptionService {
       {
         audioSliceSec: 30,
         transcribeOptions: {
-          language: "en",
+          language: DEFAULT_LANGUAGE,
           ...options,
         },
       },
