@@ -99,8 +99,26 @@ export class DatabaseManager {
    */
   async initialize(): Promise<void> {
     try {
-      await this.db.execAsync(SCHEMA_SQL);
-      console.log('[DatabaseManager] Schema initialized');
+      // Split the schema into individual statements
+      const statements = SCHEMA_SQL.split(';')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      for (const sql of statements) {
+        try {
+          await this.db.execAsync(sql);
+        } catch (statementError) {
+          // If the vector table fails, it's likely because we're in Expo Go
+          if (sql.includes('USING vec0')) {
+            console.warn('[DatabaseManager] sqlite-vec extension not found. Skipping vector table. Semantic search will be disabled.');
+            continue; 
+          }
+          console.error(`[DatabaseManager] Failed to execute statement: "${sql}"`, statementError);
+          throw statementError;
+        }
+      }
+      
+      console.log('[DatabaseManager] Schema initialized successfully');
     } catch (error) {
       console.error('[DatabaseManager] Schema initialization failed:', error);
       throw error;
@@ -184,6 +202,20 @@ export class DatabaseManager {
     const symptomId = String(result.lastInsertRowId);
     console.log('[DatabaseManager] Symptom logged, id:', symptomId);
     return symptomId;
+  }
+
+  /**
+   * Retrieves all logged symptoms from the daily_symptoms table.
+   * Ordered by creation date (newest first).
+   */
+  async getAllSymptoms(): Promise<{ symptom_id: string; symptom_description: string; created_at: string }[]> {
+    const rows = await this.db.getAllAsync<{ symptom_id: number; symptom_description: string; created_at: string }>(
+      'SELECT symptom_id, symptom_description, created_at FROM daily_symptoms ORDER BY created_at DESC'
+    );
+    return rows.map(row => ({
+      ...row,
+      symptom_id: String(row.symptom_id)
+    }));
   }
 
   // ==================== ACTION ITEM QUERIES ====================
